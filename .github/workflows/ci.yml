@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate-project:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn xgboost mlflow boto3 psycopg2-binary python-dotenv requests sqlalchemy
+
+      - name: Check imports
+        run: |
+          python -c "import src.api_client"
+          python -c "import src.validation"
+          python -c "import src.preprocessing"
+          python -c "import src.inference"
+          python -c "import src.db"
+          python -c "import src.mlflow_utils"
+          python -c "import src.model_promotion"
+
+      - name: Check model promotion logic
+        run: |
+          python - <<'PY'
+          from src.model_promotion import is_candidate_better
+
+          champion_metrics = {
+              "average_precision": 0.80,
+              "production_recall": 0.85,
+          }
+
+          challenger_metrics = {
+              "average_precision": 0.83,
+              "production_recall": 0.84,
+              "production_precision": 0.60,
+          }
+
+          promoted, reason = is_candidate_better(
+              champion_metrics=champion_metrics,
+              challenger_metrics=challenger_metrics,
+          )
+
+          assert promoted is True
+          print(reason)
+          PY
