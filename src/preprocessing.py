@@ -80,6 +80,15 @@ def compute_haversine_distance_km(
 def prepare_features_for_inference(df: pd.DataFrame) -> pd.DataFrame:
     data = df.copy()
 
+    if "current_time" not in data.columns:
+        if "trans_date_trans_time" in data.columns:
+            data["current_time"] = data["trans_date_trans_time"]
+        else:
+            raise ValueError(
+                "Colonne temporelle manquante : aucune colonne "
+                "'current_time' ou 'trans_date_trans_time' trouvée."
+            )
+
     data["current_time"] = pd.to_datetime(
         data["current_time"],
         errors="coerce",
@@ -147,7 +156,7 @@ def build_preprocessor() -> ColumnTransformer:
                 "onehot",
                 OneHotEncoder(
                     handle_unknown="ignore",
-                    sparse_output=False,
+                    sparse_output=True,
                 ),
             ),
         ]
@@ -158,6 +167,7 @@ def build_preprocessor() -> ColumnTransformer:
             ("numeric", numeric_transformer, NUMERIC_FEATURES),
             ("categorical", categorical_transformer, CATEGORICAL_FEATURES),
         ],
+        sparse_threshold=0.3,
         remainder="drop",
     )
 

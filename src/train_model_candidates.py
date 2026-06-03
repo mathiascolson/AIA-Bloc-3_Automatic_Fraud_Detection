@@ -364,7 +364,26 @@ def train_one_candidate(
         return result
 
 
-def export_best_model_to_s3(best_result: dict) -> None:
+def export_challenger_model_to_s3(best_result: dict) -> dict:
+    """
+    Exporte le meilleur candidat vers un chemin S3 de type challenger.
+
+    Important :
+    - ce modèle n'est pas encore le modèle de production ;
+    - il ne doit donc pas écraser les artefacts S3 production ;
+    - la production est décidée ensuite par la logique de promotion MLflow.
+    """
+
+    run_id = best_result["run_id"]
+
+    challenger_model_key = (
+        f"mlflow/challengers/{run_id}/fraud_pipeline.joblib"
+    )
+
+    challenger_metadata_key = (
+        f"mlflow/challengers/{run_id}/model_metadata.json"
+    )
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_dir_path = Path(tmp_dir)
 
@@ -372,16 +391,18 @@ def export_best_model_to_s3(best_result: dict) -> None:
         metadata_path = tmp_dir_path / "model_metadata.json"
 
         metadata = {
+            "artifact_role": "challenger",
             "model_name": best_result["model_name"],
-            "run_id": best_result["run_id"],
+            "run_id": run_id,
             "selection_score": best_result["selection_score"],
             "selection_metric": "average_precision",
             "production_threshold": PRODUCTION_THRESHOLD,
             "production_metrics": best_result["production_metrics"],
             "exported_at_utc": datetime.now(timezone.utc).isoformat(),
-            "s3_production_model_key": settings.s3_production_model_key,
-            "s3_production_model_metadata_key": settings.s3_production_model_metadata_key,
+            "s3_challenger_model_key": challenger_model_key,
+            "s3_challenger_model_metadata_key": challenger_metadata_key,
             "threshold_source": "env:FRAUD_ALERT_THRESHOLD",
+            "promotion_status": "pending",
         }
 
         joblib.dump(best_result["pipeline"], model_path)
@@ -393,13 +414,18 @@ def export_best_model_to_s3(best_result: dict) -> None:
 
         upload_file_to_s3(
             local_path=model_path,
-            s3_key=settings.s3_production_model_key,
+            s3_key=challenger_model_key,
         )
 
         upload_file_to_s3(
             local_path=metadata_path,
-            s3_key=settings.s3_production_model_metadata_key,
+            s3_key=challenger_metadata_key,
         )
+
+    return {
+        "s3_challenger_model_key": challenger_model_key,
+        "s3_challenger_model_metadata_key": challenger_metadata_key,
+    }
 
 
 def main() -> None:
@@ -457,8 +483,20 @@ def main() -> None:
     print("Production threshold:", PRODUCTION_THRESHOLD)
     print("Production metrics:", best_result["production_metrics"])
 
-    print("\nExporting best model to S3 production path...")
-    export_best_model_to_s3(best_result)
+    print("\nExporting best model to S3 challenger path...")
+    challenger_s3_info = export_challenger_model_to_s3(best_result)
+
+    print(
+        "Challenger model exported to: "
+        f"s3://{settings.s3_bucket_name}/"
+        f"{challenger_s3_info['s3_challenger_model_key']}"
+    )
+
+    print(
+        "Challenger metadata exported to: "
+        f"s3://{settings.s3_bucket_name}/"
+        f"{challenger_s3_info['s3_challenger_model_metadata_key']}"
+    )
 
     registry_info = register_best_model_as_challenger(best_result)
 
