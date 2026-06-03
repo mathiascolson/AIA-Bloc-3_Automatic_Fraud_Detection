@@ -12,7 +12,19 @@ def get_latest_workflow_run(
 ) -> dict:
     """
     Récupère le dernier run GitHub Actions pour un workflow donné.
+
+    workflow_name correspond au nom du fichier workflow :
+    exemple : ci.yml
     """
+
+    if not owner:
+        raise ValueError("GITHUB_OWNER manquant.")
+
+    if not repo:
+        raise ValueError("GITHUB_REPO manquant.")
+
+    if not workflow_name:
+        raise ValueError("GITHUB_WORKFLOW_NAME manquant.")
 
     url = (
         f"https://api.github.com/repos/{owner}/{repo}/actions/"
@@ -45,8 +57,8 @@ def get_latest_workflow_run(
 
     if not workflow_runs:
         raise ValueError(
-            f"Aucun run GitHub Actions trouvé pour {workflow_name} "
-            f"sur la branche {branch}."
+            f"Aucun run GitHub Actions trouvé pour le workflow "
+            f"{workflow_name} sur la branche {branch}."
         )
 
     return workflow_runs[0]
