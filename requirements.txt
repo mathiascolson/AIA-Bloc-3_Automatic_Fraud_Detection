@@ -1,0 +1,17 @@
+pandas
+numpy
+scikit-learn
+xgboost
+lightgbm
+imbalanced-learn
+
+mlflow
+boto3
+python-dotenv
+
+psycopg2-binary
+SQLAlchemy
+
+requests
+
+pytest

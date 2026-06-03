@@ -1,0 +1,9 @@
+pandas
+requests
+python-dotenv
+psycopg2-binary
+boto3
+sqlalchemy
+mlflow
+xgboost
+scikit-learn==1.8.0
