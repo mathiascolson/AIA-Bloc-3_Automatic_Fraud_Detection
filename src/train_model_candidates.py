@@ -25,7 +25,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-from src.config import settings
+from src.config import get_settings
 from src.preprocessing import prepare_features_and_target, build_preprocessor
 from src.s3_utils import upload_file_to_s3
 from src.training_dataset_store import read_parquet_from_s3
@@ -39,7 +39,7 @@ except ImportError:
     XGBOOST_AVAILABLE = False
 
 
-PRODUCTION_THRESHOLD = settings.fraud_alert_threshold
+PRODUCTION_THRESHOLD = get_settings.fraud_alert_threshold
 THRESHOLDS = sorted(
     set(
         [
@@ -240,7 +240,7 @@ def register_best_model_as_challenger(best_result: dict) -> dict:
     et lui attribue l'alias challenger.
     """
 
-    model_registry_name = settings.mlflow_model_name
+    model_registry_name = get_settings.mlflow_model_name
     model_uri = best_result["model_uri"]
 
     print(
@@ -374,7 +374,7 @@ def train_one_candidate(
             "classifier": classifier.__class__.__name__,
             "run_id": run_id,
             "trained_at_utc": datetime.now(timezone.utc).isoformat(),
-            "s3_processed_data_key": settings.s3_processed_data_key,
+            "s3_processed_data_key": get_settings.s3_processed_data_key,
             "production_threshold": PRODUCTION_THRESHOLD,
             "default_metrics": default_metrics,
             "threshold_analysis": threshold_results,
@@ -517,16 +517,16 @@ def export_challenger_model_to_s3(best_result: dict) -> dict:
 
 
 def main() -> None:
-    if not settings.mlflow_tracking_uri:
+    if not get_settings.mlflow_tracking_uri:
         raise ValueError("MLFLOW_TRACKING_URI is missing in .env")
 
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment(settings.mlflow_experiment_name)
+    mlflow.set_tracking_uri(get_settings.mlflow_tracking_uri)
+    mlflow.set_experiment(get_settings.mlflow_experiment_name)
 
     print("Loading processed training dataset from S3...")
     df = read_parquet_from_s3(
-        bucket_name=settings.s3_bucket_name,
-        object_key=settings.s3_processed_data_key,
+        bucket_name=get_settings.s3_bucket_name,
+        object_key=get_settings.s3_processed_data_key,
     )
 
     print("Preparing features and target...")
@@ -579,13 +579,13 @@ def main() -> None:
 
     print(
         "Challenger model exported to: "
-        f"s3://{settings.s3_bucket_name}/"
+        f"s3://{get_settings.s3_bucket_name}/"
         f"{challenger_s3_info['s3_challenger_model_key']}"
     )
 
     print(
         "Challenger metadata exported to: "
-        f"s3://{settings.s3_bucket_name}/"
+        f"s3://{get_settings.s3_bucket_name}/"
         f"{challenger_s3_info['s3_challenger_model_metadata_key']}"
     )
 
