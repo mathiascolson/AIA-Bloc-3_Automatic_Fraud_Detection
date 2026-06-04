@@ -21,11 +21,21 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install base dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-airflow.txt
+
+      - name: Install Airflow
+        run: |
+          AIRFLOW_VERSION=2.10.5
+          PYTHON_VERSION=3.11
+          CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+          pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}"
+
+      - name: Install test dependencies
+        run: |
+          pip install pytest
 
       - name: Run tests
         run: |
@@ -44,7 +54,7 @@ jobs:
           python -c "import src.training_dataset_store"
           python -c "import src.xcom_utils"
 
-      - name: Check DAG imports
+      - name: Check DAG syntax
         run: |
           python -m py_compile dags/fraud_inference_pipeline.py
           python -m py_compile dags/fraud_retraining_cd_pipeline.py
