@@ -99,6 +99,21 @@ def write_parquet_to_s3(
         index=False,
     )
 
+    buffer.seek(0)
+
+    s3_client.put_object(
+        Bucket=bucket_name,
+        Key=object_key,
+        Body=buffer.getvalue(),
+        ContentType="application/octet-stream",
+    )
+
+    print(
+        "[S3] Dataset Parquet écrit : "
+        f"s3://{bucket_name}/{object_key} "
+        f"({len(normalized_df)} ligne(s))"
+    )
+
 def load_or_initialize_training_dataset(
     bucket_name: str,
     raw_data_key: str,

@@ -22,13 +22,17 @@ from src.api_client import fetch_current_transactions
 from src.data_quality import validate_incoming_transactions
 from src.db import (
     count_unintegrated_labeled_transactions,
+    create_fraud_alerts_table_if_not_exists,
     create_labeled_transactions_table_if_not_exists,
     create_predictions_table_if_not_exists,
     get_connection,
+    insert_fraud_alerts_batch,
     insert_labeled_transactions_batch,
     insert_predictions_batch,
+    mark_fraud_alerts_as_notified,
 )
 from src.inference import predict_fraud
+from src.notification import send_discord_fraud_alerts
 from src.validation import validate_transactions
 from src.xcom_utils import dataframe_to_xcom_json, xcom_json_to_dataframe
 
@@ -41,7 +45,6 @@ def get_required_config(name: str) -> str:
 
     Lève une erreur explicite si la valeur est absente.
     """
-
     value = os.getenv(name)
 
     if value:
@@ -61,7 +64,6 @@ def get_optional_config(name: str) -> str | None:
     1. les variables d'environnement ;
     2. les Airflow Variables.
     """
-
     value = os.getenv(name)
 
     if value:
@@ -78,7 +80,6 @@ def get_payment_api_url() -> str:
     1. FRAUD_API_URL si défini ;
     2. PAYMENT_API_URL + PAYMENT_API_CURRENT_TRANSACTIONS_ENDPOINT.
     """
-
     fraud_api_url = get_optional_config("FRAUD_API_URL")
 
     if fraud_api_url:
@@ -101,14 +102,14 @@ default_args = {
     dag_id="fraud_inference_pipeline",
     description=(
         "Pipeline d'inférence fraude : API Jedha -> MLflow champion -> "
-        "NeonDB -> trigger conditionnel du retraining/CD"
+        "NeonDB -> alerting Discord -> trigger conditionnel du retraining/CD"
     ),
     default_args=default_args,
     start_date=datetime(2026, 1, 1),
     schedule=timedelta(hours=2),
     catchup=False,
     max_active_runs=1,
-    tags=["fraud", "inference", "mlflow", "neondb"],
+    tags=["fraud", "inference", "mlflow", "neondb", "alerting"],
 )
 def fraud_inference_pipeline():
     @task(
@@ -211,6 +212,70 @@ def fraud_inference_pipeline():
         return inserted_rows
 
     @task(
+        task_id="create_alerts_and_notify",
+        execution_timeout=timedelta(minutes=3),
+    )
+    def create_alerts_and_notify(predictions_json: str) -> int:
+        predictions = xcom_json_to_dataframe(predictions_json)
+
+        database_url = get_required_config("FRAUD_DATABASE_URL")
+        notification_channel = (
+            get_optional_config("NOTIFICATION_CHANNEL") or "discord"
+        ).lower()
+
+        conn = get_connection(database_url)
+
+        try:
+            create_fraud_alerts_table_if_not_exists(conn)
+
+            created_alerts = insert_fraud_alerts_batch(
+                conn=conn,
+                df=predictions,
+                notification_channel=notification_channel,
+            )
+
+            if created_alerts.empty:
+                print("[ALERTING] Aucune nouvelle alerte à notifier.")
+                return 0
+
+            if notification_channel != "discord":
+                print(
+                    "[ALERTING] Canal de notification non géré : "
+                    f"{notification_channel}. Alertes créées sans notification."
+                )
+                return len(created_alerts)
+
+            discord_webhook_url = get_required_config("DISCORD_WEBHOOK_URL")
+
+            sent_count = send_discord_fraud_alerts(
+                alerts=created_alerts,
+                webhook_url=discord_webhook_url,
+            )
+
+            notified_trans_nums = (
+                created_alerts["trans_num"]
+                .dropna()
+                .astype(str)
+                .tolist()
+            )
+
+            mark_fraud_alerts_as_notified(
+                conn=conn,
+                trans_nums=notified_trans_nums,
+                notification_status="sent",
+            )
+
+        finally:
+            conn.close()
+
+        print(
+            "[ALERTING] Alertes créées et notifications envoyées : "
+            f"{sent_count}"
+        )
+
+        return sent_count
+
+    @task(
         task_id="store_labeled_transactions",
         execution_timeout=timedelta(minutes=3),
     )
@@ -253,7 +318,6 @@ def fraud_inference_pipeline():
         si le nombre de transactions labellisées non intégrées atteint le seuil,
         le DAG fraud_retraining_cd_pipeline est déclenché.
         """
-
         print(
             "[DAG] Transactions labellisées insérées pendant ce run : "
             f"{stored_labeled_transactions_count}"
@@ -331,6 +395,8 @@ def fraud_inference_pipeline():
 
     stored_predictions = store_predictions(predictions)
 
+    created_alerts = create_alerts_and_notify(predictions)
+
     stored_labeled_transactions = store_labeled_transactions(
         gx_validated_transactions
     )
@@ -340,6 +406,7 @@ def fraud_inference_pipeline():
         stored_predictions,
     )
 
+    stored_predictions >> created_alerts
     retraining_condition >> trigger_retraining_cd
 
 

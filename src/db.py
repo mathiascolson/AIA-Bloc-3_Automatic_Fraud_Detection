@@ -115,6 +115,248 @@ def insert_predictions_batch(conn, df: pd.DataFrame) -> None:
 
     print(f"[DB] Prédictions insérées dans NeonDB : {len(records)}")
 
+def create_fraud_alerts_table_if_not_exists(conn) -> None:
+    """
+    Crée la table d'alertes fraude si elle n'existe pas.
+
+    Une alerte est créée uniquement pour les transactions prédites comme fraude.
+    La contrainte UNIQUE sur trans_num évite les doublons lors des retries Airflow.
+    """
+
+    query = """
+    CREATE TABLE IF NOT EXISTS fraud_alerts (
+        id SERIAL PRIMARY KEY,
+        trans_num TEXT UNIQUE NOT NULL,
+        amt DOUBLE PRECISION,
+        merchant TEXT,
+        category TEXT,
+        city TEXT,
+        state TEXT,
+        transaction_time TIMESTAMP,
+        fraud_probability DOUBLE PRECISION NOT NULL,
+        fraud_alert_threshold DOUBLE PRECISION NOT NULL,
+        model_name TEXT,
+        model_alias TEXT,
+        notification_channel TEXT DEFAULT 'discord',
+        notification_status TEXT DEFAULT 'created',
+        created_at TIMESTAMP DEFAULT NOW(),
+        notified_at TIMESTAMP
+    );
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+
+    conn.commit()
+
+
+def insert_fraud_alerts_batch(
+    conn,
+    df: pd.DataFrame,
+    notification_channel: str = "discord",
+) -> pd.DataFrame:
+    """
+    Insère les nouvelles alertes fraude dans NeonDB.
+
+    Seules les lignes avec is_fraud_predicted = 1 sont insérées.
+    Les doublons sont ignorés via ON CONFLICT (trans_num) DO NOTHING.
+
+    Retourne uniquement les alertes réellement créées pendant cet appel,
+    afin d'éviter d'envoyer plusieurs notifications Discord pour la même fraude.
+    """
+
+    required_columns = [
+        "trans_num",
+        "amt",
+        "category",
+        "current_time",
+        "is_fraud_predicted",
+        "fraud_probability",
+        "fraud_alert_threshold",
+        "model_name",
+        "model_alias",
+    ]
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Colonnes manquantes pour la création d'alertes : {missing_columns}"
+        )
+
+    fraud_alerts = df[df["is_fraud_predicted"] == 1].copy()
+
+    if fraud_alerts.empty:
+        print("[DB] Aucune fraude prédite, aucune alerte créée.")
+        return fraud_alerts
+
+    optional_columns = ["merchant", "city", "state"]
+
+    for column in optional_columns:
+        if column not in fraud_alerts.columns:
+            fraud_alerts[column] = None
+
+    cols = [
+        "trans_num",
+        "amt",
+        "merchant",
+        "category",
+        "city",
+        "state",
+        "current_time",
+        "fraud_probability",
+        "fraud_alert_threshold",
+        "model_name",
+        "model_alias",
+    ]
+
+    data = fraud_alerts[cols].copy()
+
+    data["current_time"] = pd.to_datetime(
+        data["current_time"],
+        errors="coerce",
+    )
+
+    data["notification_channel"] = notification_channel
+    data["notification_status"] = "created"
+
+    data = _replace_nan_with_none(data)
+
+    records = data[
+        [
+            "trans_num",
+            "amt",
+            "merchant",
+            "category",
+            "city",
+            "state",
+            "current_time",
+            "fraud_probability",
+            "fraud_alert_threshold",
+            "model_name",
+            "model_alias",
+            "notification_channel",
+            "notification_status",
+        ]
+    ].values.tolist()
+
+    query = """
+    INSERT INTO fraud_alerts (
+        trans_num,
+        amt,
+        merchant,
+        category,
+        city,
+        state,
+        transaction_time,
+        fraud_probability,
+        fraud_alert_threshold,
+        model_name,
+        model_alias,
+        notification_channel,
+        notification_status
+    )
+    VALUES %s
+    ON CONFLICT (trans_num) DO NOTHING
+    RETURNING
+        trans_num,
+        amt,
+        merchant,
+        category,
+        city,
+        state,
+        transaction_time,
+        fraud_probability,
+        fraud_alert_threshold,
+        model_name,
+        model_alias,
+        notification_channel,
+        notification_status,
+        created_at;
+    """
+
+    with conn.cursor() as cursor:
+        inserted_rows = execute_values(
+            cursor,
+            query,
+            records,
+            fetch=True,
+        )
+
+    conn.commit()
+
+    inserted_alerts = pd.DataFrame(
+        inserted_rows,
+        columns=[
+            "trans_num",
+            "amt",
+            "merchant",
+            "category",
+            "city",
+            "state",
+            "transaction_time",
+            "fraud_probability",
+            "fraud_alert_threshold",
+            "model_name",
+            "model_alias",
+            "notification_channel",
+            "notification_status",
+            "created_at",
+        ],
+    )
+
+    print(
+        "[DB] Nouvelles alertes fraude créées : "
+        f"{len(inserted_alerts)}"
+    )
+
+    return inserted_alerts
+
+
+def mark_fraud_alerts_as_notified(
+    conn,
+    trans_nums: list[str],
+    notification_status: str = "sent",
+) -> int:
+    """
+    Marque les alertes comme notifiées après envoi Discord.
+    """
+
+    if not trans_nums:
+        print("[DB] Aucune alerte à marquer comme notifiée.")
+        return 0
+
+    query = """
+    UPDATE fraud_alerts
+    SET
+        notification_status = %s,
+        notified_at = NOW()
+    WHERE trans_num = ANY(%s);
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            query,
+            (
+                notification_status,
+                trans_nums,
+            ),
+        )
+        updated_count = cursor.rowcount
+
+    conn.commit()
+
+    print(
+        "[DB] Alertes marquées comme notifiées : "
+        f"{updated_count}"
+    )
+
+    return updated_count
+
 
 def create_model_cd_decisions_table_if_not_exists(conn) -> None:
     """

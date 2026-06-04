@@ -1,97 +1,89 @@
-from typing import Any
+from __future__ import annotations
+
 import requests
-from src.config import get_settings
+import pandas as pd
 
-def build_fraud_alert_message(alert_data: dict[str, Any]) -> str:
-    transaction_id = alert_data.get("transaction_id", "unknown")
-    fraud_probability = float(alert_data.get("fraud_probability", 0.0))
-    alert_threshold = float(alert_data.get("fraud_alert_threshold", 0.0))
 
-    amount = alert_data.get("amount", "unknown")
-    currency = alert_data.get("currency", "USD")
-    merchant = alert_data.get("merchant", "unknown")
-    category = alert_data.get("category", "unknown")
-    customer_id = alert_data.get("customer_id", "unknown")
+def build_discord_fraud_alert_message(alert: dict) -> str:
+    """
+    Construit un message Discord pour une alerte fraude.
 
-    city = alert_data.get("city", "unknown")
-    state = alert_data.get("state", "unknown")
-    customer_lat = alert_data.get("customer_lat", "unknown")
-    customer_long = alert_data.get("customer_long", "unknown")
-    merchant_lat = alert_data.get("merchant_lat", "unknown")
-    merchant_long = alert_data.get("merchant_long", "unknown")
-    distance_km = alert_data.get("distance_customer_merchant_km")
+    Le message évite les données personnelles directes.
+    """
 
-    transaction_datetime = alert_data.get("transaction_datetime", "unknown")
-
-    distance_text = (
-        f"{float(distance_km):.2f} km"
-        if distance_km is not None
-        else "unknown"
-    )
+    trans_num = alert.get("trans_num")
+    amount = alert.get("amt")
+    merchant = alert.get("merchant")
+    category = alert.get("category")
+    city = alert.get("city")
+    state = alert.get("state")
+    transaction_time = alert.get("transaction_time")
+    fraud_probability = alert.get("fraud_probability")
+    fraud_alert_threshold = alert.get("fraud_alert_threshold")
+    model_name = alert.get("model_name")
+    model_alias = alert.get("model_alias")
 
     return (
-        "🚨 **Fraud alert detected**\n\n"
-        f"**Transaction ID:** `{transaction_id}`\n"
-        f"**Fraud probability:** `{fraud_probability:.4f}`\n"
-        f"**Alert threshold:** `{alert_threshold:.2f}`\n\n"
-        f"**Amount:** `{amount} {currency}`\n"
-        f"**Merchant:** `{merchant}`\n"
-        f"**Category:** `{category}`\n"
-        f"**Customer ID:** `{customer_id}`\n\n"
-        f"**Customer location:** `{city}, {state}`\n"
-        f"**Customer coordinates:** `{customer_lat}, {customer_long}`\n"
-        f"**Merchant coordinates:** `{merchant_lat}, {merchant_long}`\n"
-        f"**Customer ↔ merchant distance:** `{distance_text}`\n\n"
-        f"**Transaction datetime:** `{transaction_datetime}`"
+        "🚨 **Fraud alert detected**\n"
+        f"- Transaction: `{trans_num}`\n"
+        f"- Fraud probability: `{fraud_probability:.4f}`\n"
+        f"- Alert threshold: `{fraud_alert_threshold:.4f}`\n"
+        f"- Amount: `{amount}`\n"
+        f"- Merchant: `{merchant}`\n"
+        f"- Category: `{category}`\n"
+        f"- Location: `{city}, {state}`\n"
+        f"- Transaction time: `{transaction_time}`\n"
+        f"- Model: `{model_name}`\n"
+        f"- Alias: `{model_alias}`"
     )
 
 
-def send_discord_notification(message: str) -> dict[str, Any]:
-    settings = get_settings()
-    webhook_url = settings.discord_webhook_url
+def send_discord_message(
+    webhook_url: str,
+    message: str,
+) -> None:
+    """
+    Envoie un message Discord via webhook.
+    """
 
     if not webhook_url:
-        return {
-            "notification_sent": False,
-            "notification_channel": "discord",
-            "notification_status": "skipped",
-            "reason": "DISCORD_WEBHOOK_URL is missing",
-        }
+        raise ValueError("DISCORD_WEBHOOK_URL is missing.")
 
     response = requests.post(
         webhook_url,
         json={"content": message},
-        timeout=10,
+        timeout=30,
     )
 
-    if response.status_code not in (200, 204):
-        return {
-            "notification_sent": False,
-            "notification_channel": "discord",
-            "notification_status": "failed",
-            "status_code": response.status_code,
-            "response_text": response.text,
-        }
-
-    return {
-        "notification_sent": True,
-        "notification_channel": "discord",
-        "notification_status": "sent",
-        "status_code": response.status_code,
-    }
+    response.raise_for_status()
 
 
-def send_fraud_alert_notification(alert_data: dict[str, Any]) -> dict[str, Any]:
-    settings = get_settings()
-    channel = settings.notification_channel.lower()
+def send_discord_fraud_alerts(
+    alerts: pd.DataFrame,
+    webhook_url: str,
+) -> int:
+    """
+    Envoie une notification Discord pour chaque nouvelle alerte fraude.
 
-    if channel != "discord":
-        return {
-            "notification_sent": False,
-            "notification_channel": channel,
-            "notification_status": "skipped",
-            "reason": f"Unsupported notification channel: {channel}",
-        }
+    Retourne le nombre de notifications envoyées.
+    """
 
-    message = build_fraud_alert_message(alert_data)
-    return send_discord_notification(message)
+    if alerts.empty:
+        print("[DISCORD] Aucune alerte à notifier.")
+        return 0
+
+    sent_count = 0
+
+    for alert in alerts.to_dict(orient="records"):
+        message = build_discord_fraud_alert_message(alert)
+
+        send_discord_message(
+            webhook_url=webhook_url,
+            message=message,
+        )
+
+        sent_count += 1
+
+    print(f"[DISCORD] Notifications envoyées : {sent_count}")
+
+    return sent_count
