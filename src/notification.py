@@ -47,7 +47,8 @@ def build_fraud_alert_message(alert_data: dict[str, Any]) -> str:
 
 
 def send_discord_notification(message: str) -> dict[str, Any]:
-    webhook_url = get_settings.discord_webhook_url
+    settings = get_settings()
+    webhook_url = settings.discord_webhook_url
 
     if not webhook_url:
         return {
@@ -81,7 +82,8 @@ def send_discord_notification(message: str) -> dict[str, Any]:
 
 
 def send_fraud_alert_notification(alert_data: dict[str, Any]) -> dict[str, Any]:
-    channel = get_settings.notification_channel.lower()
+    settings = get_settings()
+    channel = settings.notification_channel.lower()
 
     if channel != "discord":
         return {
