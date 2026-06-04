@@ -167,7 +167,7 @@ def build_preprocessor() -> ColumnTransformer:
             ("numeric", numeric_transformer, NUMERIC_FEATURES),
             ("categorical", categorical_transformer, CATEGORICAL_FEATURES),
         ],
-        sparse_threshold=0.3,
+        sparse_threshold=1.0,
         remainder="drop",
     )
 

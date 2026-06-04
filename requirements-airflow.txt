@@ -7,3 +7,5 @@ sqlalchemy
 mlflow
 xgboost
 scikit-learn==1.8.0
+great_expectations
+pytest

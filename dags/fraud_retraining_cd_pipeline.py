@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from airflow.decorators import dag, task
+from airflow.exceptions import AirflowSkipException
 from airflow.models import Variable
 
 
@@ -48,8 +49,9 @@ default_args = {
 @dag(
     dag_id="fraud_retraining_cd_pipeline",
     description=(
-        "Pipeline CD modèle : vérification CI GitHub, entraînement challenger, "
-        "comparaison avec champion, promotion MLflow et historisation NeonDB"
+        "Pipeline CD modèle : vérification CI GitHub, mise à jour du dataset "
+        "d'entraînement, entraînement challenger, comparaison avec champion, "
+        "promotion MLflow et historisation NeonDB"
     ),
     default_args=default_args,
     start_date=datetime(2026, 1, 1),
@@ -101,18 +103,134 @@ def fraud_retraining_cd_pipeline():
         }
 
     @task(
+        task_id="update_training_dataset_from_labeled_transactions",
+        execution_timeout=timedelta(minutes=10),
+    )
+    def update_training_dataset_from_labeled_transactions(
+        ci_status: dict,
+    ) -> int:
+        from src.db import (
+            count_unintegrated_labeled_transactions,
+            fetch_unintegrated_labeled_transactions,
+            get_connection,
+            mark_labeled_transactions_as_integrated,
+        )
+        from src.training_dataset_store import (
+            append_labeled_transactions_to_training_dataset,
+        )
+
+        if not ci_status.get("ci_ok"):
+            raise ValueError(
+                "Mise à jour du dataset annulée : CI GitHub non validée."
+            )
+
+        database_url = get_required_config("FRAUD_DATABASE_URL")
+        bucket_name = get_required_config("S3_BUCKET_NAME")
+        raw_data_key = get_required_config("S3_RAW_DATA_KEY")
+        processed_data_key = get_required_config("S3_PROCESSED_DATA_KEY")
+
+        min_new_transactions = int(
+            get_optional_config("MIN_NEW_TRANSACTIONS_FOR_RETRAINING") or "100"
+        )
+
+        conn = get_connection(database_url)
+
+        try:
+            available_transactions = (
+                count_unintegrated_labeled_transactions(conn)
+            )
+
+            print(
+                "[DAG] Transactions labellisées non intégrées : "
+                f"{available_transactions}"
+            )
+
+            print(
+                "[DAG] Seuil minimal de réentraînement : "
+                f"{min_new_transactions}"
+            )
+
+            if available_transactions < min_new_transactions:
+                raise AirflowSkipException(
+                    "Volume insuffisant pour réentraînement : "
+                    f"{available_transactions} transaction(s) disponible(s), "
+                    f"seuil={min_new_transactions}."
+                )
+
+            labeled_transactions = fetch_unintegrated_labeled_transactions(conn)
+
+            integrated_trans_nums = (
+                append_labeled_transactions_to_training_dataset(
+                    bucket_name=bucket_name,
+                    raw_data_key=raw_data_key,
+                    processed_data_key=processed_data_key,
+                    labeled_transactions_df=labeled_transactions,
+                )
+            )
+
+            if not integrated_trans_nums:
+                already_present_trans_nums = (
+                    labeled_transactions["trans_num"]
+                    .dropna()
+                    .astype(str)
+                    .tolist()
+                )
+
+                reconciled_count = mark_labeled_transactions_as_integrated(
+                    conn=conn,
+                    trans_nums=already_present_trans_nums,
+                )
+
+                print(
+                    "[DAG] Transactions déjà présentes dans le dataset "
+                    "et marquées comme intégrées : "
+                    f"{reconciled_count}"
+                )
+
+                raise AirflowSkipException(
+                    "Aucune nouvelle transaction à ajouter au dataset. "
+                    "Les transactions déjà présentes ont été marquées "
+                    "comme intégrées."
+                )
+
+            updated_count = mark_labeled_transactions_as_integrated(
+                conn=conn,
+                trans_nums=integrated_trans_nums,
+            )
+
+        finally:
+            conn.close()
+
+        print(
+            "[DAG] Transactions intégrées au dataset d'entraînement : "
+            f"{updated_count}"
+        )
+
+        return updated_count
+
+    @task(
         task_id="train_challenger",
         execution_timeout=timedelta(minutes=45),
     )
-    def train_challenger(ci_status: dict) -> str:
-        if not ci_status.get("ci_ok"):
-            raise ValueError("Entraînement annulé : CI GitHub non validée.")
+    def train_challenger(integrated_transactions_count: int) -> str:
+        if integrated_transactions_count <= 0:
+            raise AirflowSkipException(
+                "Entraînement annulé : aucune transaction intégrée au dataset."
+            )
 
         from src.train_model_candidates import main as train_candidates
 
-        print("[TRAINING] Démarrage entraînement candidats.")
+        print(
+            "[TRAINING] Démarrage entraînement candidats après intégration de "
+            f"{integrated_transactions_count} transaction(s)."
+        )
+
         train_candidates()
-        print("[TRAINING] Entraînement terminé. Le meilleur modèle est enregistré en challenger.")
+
+        print(
+            "[TRAINING] Entraînement terminé. "
+            "Le meilleur modèle est enregistré en challenger."
+        )
 
         return "challenger_trained"
 
@@ -149,7 +267,7 @@ def fraud_retraining_cd_pipeline():
             champion_metrics=champion_info["metrics"],
             challenger_metrics=challenger_info["metrics"],
         )
-        
+
         def export_promoted_model_to_s3_production(
             tracking_uri: str,
             model_name: str,
@@ -161,12 +279,16 @@ def fraud_retraining_cd_pipeline():
             from datetime import datetime, timezone
             from pathlib import Path
 
+            import boto3
             import joblib
             import mlflow
-            import boto3
 
-            production_model_key = get_required_config("S3_PRODUCTION_MODEL_KEY")
-            production_metadata_key = get_required_config("S3_PRODUCTION_MODEL_METADATA_KEY")
+            production_model_key = get_required_config(
+                "S3_PRODUCTION_MODEL_KEY"
+            )
+            production_metadata_key = get_required_config(
+                "S3_PRODUCTION_MODEL_METADATA_KEY"
+            )
             bucket_name = get_required_config("S3_BUCKET_NAME")
 
             model_uri = f"models:/{model_name}/{model_version}"
@@ -218,6 +340,7 @@ def fraud_retraining_cd_pipeline():
                 "[S3] Modèle promu exporté vers "
                 f"s3://{bucket_name}/{production_model_key}"
             )
+
             print(
                 "[S3] Métadonnées production exportées vers "
                 f"s3://{bucket_name}/{production_metadata_key}"
@@ -279,8 +402,15 @@ def fraud_retraining_cd_pipeline():
         return 1
 
     ci_status = check_github_ci()
-    challenger_training = train_challenger(ci_status)
+
+    integrated_transactions_count = (
+        update_training_dataset_from_labeled_transactions(ci_status)
+    )
+
+    challenger_training = train_challenger(integrated_transactions_count)
+
     decision = compare_and_promote(challenger_training)
+
     store_cd_decision(decision)
 
 

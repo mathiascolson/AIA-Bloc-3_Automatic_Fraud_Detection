@@ -27,18 +27,32 @@ from sklearn.pipeline import Pipeline
 
 from src.config import settings
 from src.preprocessing import prepare_features_and_target, build_preprocessor
-from src.s3_utils import read_csv_from_s3, upload_file_to_s3
+from src.s3_utils import upload_file_to_s3
+from src.training_dataset_store import read_parquet_from_s3
 
 
 try:
     from xgboost import XGBClassifier
+
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
 
 
 PRODUCTION_THRESHOLD = settings.fraud_alert_threshold
-THRESHOLDS = sorted(set([0.50, 0.60, 0.70, 0.80, 0.90, 0.95, PRODUCTION_THRESHOLD]))
+THRESHOLDS = sorted(
+    set(
+        [
+            0.50,
+            0.60,
+            0.70,
+            0.80,
+            0.90,
+            0.95,
+            PRODUCTION_THRESHOLD,
+        ]
+    )
+)
 
 
 def compute_class_imbalance_ratio(y: pd.Series) -> float:
@@ -114,14 +128,29 @@ def evaluate_thresholds(y_true, y_proba, thresholds: list[float]) -> list[dict]:
     for threshold in thresholds:
         y_pred_threshold = (y_proba >= threshold).astype(int)
 
-        tn, fp, fn, tp = confusion_matrix(y_true, y_pred_threshold).ravel()
+        tn, fp, fn, tp = confusion_matrix(
+            y_true,
+            y_pred_threshold,
+        ).ravel()
 
         results.append(
             {
                 "threshold": threshold,
-                "precision": precision_score(y_true, y_pred_threshold, zero_division=0),
-                "recall": recall_score(y_true, y_pred_threshold, zero_division=0),
-                "f1_score": f1_score(y_true, y_pred_threshold, zero_division=0),
+                "precision": precision_score(
+                    y_true,
+                    y_pred_threshold,
+                    zero_division=0,
+                ),
+                "recall": recall_score(
+                    y_true,
+                    y_pred_threshold,
+                    zero_division=0,
+                ),
+                "f1_score": f1_score(
+                    y_true,
+                    y_pred_threshold,
+                    zero_division=0,
+                ),
                 "true_negatives": int(tn),
                 "false_positives": int(fp),
                 "false_negatives": int(fn),
@@ -136,12 +165,30 @@ def log_threshold_metrics(threshold_results: list[dict]) -> None:
     for row in threshold_results:
         threshold_label = str(row["threshold"]).replace(".", "_")
 
-        mlflow.log_metric(f"precision_threshold_{threshold_label}", row["precision"])
-        mlflow.log_metric(f"recall_threshold_{threshold_label}", row["recall"])
-        mlflow.log_metric(f"f1_threshold_{threshold_label}", row["f1_score"])
-        mlflow.log_metric(f"false_positives_threshold_{threshold_label}", row["false_positives"])
-        mlflow.log_metric(f"false_negatives_threshold_{threshold_label}", row["false_negatives"])
-        mlflow.log_metric(f"true_positives_threshold_{threshold_label}", row["true_positives"])
+        mlflow.log_metric(
+            f"precision_threshold_{threshold_label}",
+            row["precision"],
+        )
+        mlflow.log_metric(
+            f"recall_threshold_{threshold_label}",
+            row["recall"],
+        )
+        mlflow.log_metric(
+            f"f1_threshold_{threshold_label}",
+            row["f1_score"],
+        )
+        mlflow.log_metric(
+            f"false_positives_threshold_{threshold_label}",
+            row["false_positives"],
+        )
+        mlflow.log_metric(
+            f"false_negatives_threshold_{threshold_label}",
+            row["false_negatives"],
+        )
+        mlflow.log_metric(
+            f"true_positives_threshold_{threshold_label}",
+            row["true_positives"],
+        )
 
 
 def wait_for_model_version_ready(
@@ -178,6 +225,7 @@ def wait_for_model_version_ready(
             f"[MLFLOW] Version {model_name} v{model_version} "
             f"en statut {status}. Attente..."
         )
+
         time.sleep(poll_interval_seconds)
 
     raise TimeoutError(
@@ -261,8 +309,17 @@ def train_one_candidate(
         y_pred_default = model_pipeline.predict(X_test)
         y_proba = model_pipeline.predict_proba(X_test)[:, 1]
 
-        default_metrics = compute_metrics(y_test, y_pred_default, y_proba)
-        threshold_results = evaluate_thresholds(y_test, y_proba, THRESHOLDS)
+        default_metrics = compute_metrics(
+            y_test,
+            y_pred_default,
+            y_proba,
+        )
+
+        threshold_results = evaluate_thresholds(
+            y_test,
+            y_proba,
+            THRESHOLDS,
+        )
 
         for metric_name, metric_value in default_metrics.items():
             mlflow.log_metric(metric_name, metric_value)
@@ -270,16 +327,35 @@ def train_one_candidate(
         log_threshold_metrics(threshold_results)
 
         production_row = next(
-            row for row in threshold_results
+            row
+            for row in threshold_results
             if row["threshold"] == PRODUCTION_THRESHOLD
         )
 
-        mlflow.log_metric("production_precision", production_row["precision"])
-        mlflow.log_metric("production_recall", production_row["recall"])
-        mlflow.log_metric("production_f1_score", production_row["f1_score"])
-        mlflow.log_metric("production_false_positives", production_row["false_positives"])
-        mlflow.log_metric("production_false_negatives", production_row["false_negatives"])
-        mlflow.log_metric("production_true_positives", production_row["true_positives"])
+        mlflow.log_metric(
+            "production_precision",
+            production_row["precision"],
+        )
+        mlflow.log_metric(
+            "production_recall",
+            production_row["recall"],
+        )
+        mlflow.log_metric(
+            "production_f1_score",
+            production_row["f1_score"],
+        )
+        mlflow.log_metric(
+            "production_false_positives",
+            production_row["false_positives"],
+        )
+        mlflow.log_metric(
+            "production_false_negatives",
+            production_row["false_negatives"],
+        )
+        mlflow.log_metric(
+            "production_true_positives",
+            production_row["true_positives"],
+        )
 
         classification_report_dict = classification_report(
             y_test,
@@ -288,14 +364,17 @@ def train_one_candidate(
             zero_division=0,
         )
 
-        confusion_matrix_default = confusion_matrix(y_test, y_pred_default)
+        confusion_matrix_default = confusion_matrix(
+            y_test,
+            y_pred_default,
+        )
 
         metadata = {
             "model_name": model_name,
             "classifier": classifier.__class__.__name__,
             "run_id": run_id,
             "trained_at_utc": datetime.now(timezone.utc).isoformat(),
-            "s3_raw_data_key": settings.s3_raw_data_key,
+            "s3_processed_data_key": settings.s3_processed_data_key,
             "production_threshold": PRODUCTION_THRESHOLD,
             "default_metrics": default_metrics,
             "threshold_analysis": threshold_results,
@@ -326,9 +405,18 @@ def train_one_candidate(
                 encoding="utf-8",
             )
 
-            mlflow.log_artifact(str(metadata_path), artifact_path="metadata")
-            mlflow.log_artifact(str(report_path), artifact_path="evaluation")
-            mlflow.log_artifact(str(threshold_path), artifact_path="evaluation")
+            mlflow.log_artifact(
+                str(metadata_path),
+                artifact_path="metadata",
+            )
+            mlflow.log_artifact(
+                str(report_path),
+                artifact_path="evaluation",
+            )
+            mlflow.log_artifact(
+                str(threshold_path),
+                artifact_path="evaluation",
+            )
 
             mlflow.sklearn.log_model(
                 sk_model=model_pipeline,
@@ -435,8 +523,11 @@ def main() -> None:
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     mlflow.set_experiment(settings.mlflow_experiment_name)
 
-    print("Loading training dataset from S3...")
-    df = read_csv_from_s3(settings.s3_raw_data_key)
+    print("Loading processed training dataset from S3...")
+    df = read_parquet_from_s3(
+        bucket_name=settings.s3_bucket_name,
+        object_key=settings.s3_processed_data_key,
+    )
 
     print("Preparing features and target...")
     X, y = prepare_features_and_target(df)
