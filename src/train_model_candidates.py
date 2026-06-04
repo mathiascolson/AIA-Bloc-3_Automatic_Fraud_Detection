@@ -25,7 +25,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-from src.config import get_settings
+from src.config import Settings, get_settings
 from src.preprocessing import prepare_features_and_target, build_preprocessor
 from src.s3_utils import upload_file_to_s3
 from src.training_dataset_store import read_parquet_from_s3
@@ -39,20 +39,11 @@ except ImportError:
     XGBOOST_AVAILABLE = False
 
 
-PRODUCTION_THRESHOLD = get_settings.fraud_alert_threshold
-THRESHOLDS = sorted(
-    set(
-        [
-            0.50,
-            0.60,
-            0.70,
-            0.80,
-            0.90,
-            0.95,
-            PRODUCTION_THRESHOLD,
-        ]
-    )
-)
+DEFAULT_THRESHOLDS = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95]
+
+
+def build_thresholds(production_threshold: float) -> list[float]:
+    return sorted(set(DEFAULT_THRESHOLDS + [production_threshold]))
 
 
 def compute_class_imbalance_ratio(y: pd.Series) -> float:
@@ -201,7 +192,6 @@ def wait_for_model_version_ready(
     """
     Attend que la version enregistrée dans le Model Registry soit prête.
     """
-
     start_time = time.time()
 
     while time.time() - start_time < timeout_seconds:
@@ -234,13 +224,15 @@ def wait_for_model_version_ready(
     )
 
 
-def register_best_model_as_challenger(best_result: dict) -> dict:
+def register_best_model_as_challenger(
+    best_result: dict,
+    settings: Settings,
+) -> dict:
     """
     Enregistre le meilleur candidat dans le Model Registry MLflow
     et lui attribue l'alias challenger.
     """
-
-    model_registry_name = get_settings.mlflow_model_name
+    model_registry_name = settings.mlflow_model_name
     model_uri = best_result["model_uri"]
 
     print(
@@ -289,6 +281,9 @@ def train_one_candidate(
     y_train,
     y_test,
     class_imbalance_ratio: float,
+    settings: Settings,
+    production_threshold: float,
+    thresholds: list[float],
 ) -> dict:
     model_pipeline = build_pipeline(classifier)
 
@@ -300,7 +295,7 @@ def train_one_candidate(
         mlflow.log_param("test_size", 0.20)
         mlflow.log_param("random_state", 42)
         mlflow.log_param("class_imbalance_ratio", class_imbalance_ratio)
-        mlflow.log_param("production_threshold", PRODUCTION_THRESHOLD)
+        mlflow.log_param("production_threshold", production_threshold)
 
         print(f"\nTraining candidate: {model_name}")
         model_pipeline.fit(X_train, y_train)
@@ -318,7 +313,7 @@ def train_one_candidate(
         threshold_results = evaluate_thresholds(
             y_test,
             y_proba,
-            THRESHOLDS,
+            thresholds,
         )
 
         for metric_name, metric_value in default_metrics.items():
@@ -329,7 +324,7 @@ def train_one_candidate(
         production_row = next(
             row
             for row in threshold_results
-            if row["threshold"] == PRODUCTION_THRESHOLD
+            if row["threshold"] == production_threshold
         )
 
         mlflow.log_metric(
@@ -374,8 +369,8 @@ def train_one_candidate(
             "classifier": classifier.__class__.__name__,
             "run_id": run_id,
             "trained_at_utc": datetime.now(timezone.utc).isoformat(),
-            "s3_processed_data_key": get_settings.s3_processed_data_key,
-            "production_threshold": PRODUCTION_THRESHOLD,
+            "s3_processed_data_key": settings.s3_processed_data_key,
+            "production_threshold": production_threshold,
             "default_metrics": default_metrics,
             "threshold_analysis": threshold_results,
             "classification_report_default_threshold": classification_report_dict,
@@ -440,7 +435,7 @@ def train_one_candidate(
         print(f"average_precision: {default_metrics['average_precision']:.4f}")
         print(f"roc_auc: {default_metrics['roc_auc']:.4f}")
         print(
-            f"threshold={PRODUCTION_THRESHOLD:.2f} | "
+            f"threshold={production_threshold:.2f} | "
             f"precision={production_row['precision']:.4f} | "
             f"recall={production_row['recall']:.4f} | "
             f"f1={production_row['f1_score']:.4f} | "
@@ -452,7 +447,10 @@ def train_one_candidate(
         return result
 
 
-def export_challenger_model_to_s3(best_result: dict) -> dict:
+def export_challenger_model_to_s3(
+    best_result: dict,
+    production_threshold: float,
+) -> dict:
     """
     Exporte le meilleur candidat vers un chemin S3 de type challenger.
 
@@ -461,16 +459,10 @@ def export_challenger_model_to_s3(best_result: dict) -> dict:
     - il ne doit donc pas écraser les artefacts S3 production ;
     - la production est décidée ensuite par la logique de promotion MLflow.
     """
-
     run_id = best_result["run_id"]
 
-    challenger_model_key = (
-        f"mlflow/challengers/{run_id}/fraud_pipeline.joblib"
-    )
-
-    challenger_metadata_key = (
-        f"mlflow/challengers/{run_id}/model_metadata.json"
-    )
+    challenger_model_key = f"mlflow/challengers/{run_id}/fraud_pipeline.joblib"
+    challenger_metadata_key = f"mlflow/challengers/{run_id}/model_metadata.json"
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_dir_path = Path(tmp_dir)
@@ -484,7 +476,7 @@ def export_challenger_model_to_s3(best_result: dict) -> dict:
             "run_id": run_id,
             "selection_score": best_result["selection_score"],
             "selection_metric": "average_precision",
-            "production_threshold": PRODUCTION_THRESHOLD,
+            "production_threshold": production_threshold,
             "production_metrics": best_result["production_metrics"],
             "exported_at_utc": datetime.now(timezone.utc).isoformat(),
             "s3_challenger_model_key": challenger_model_key,
@@ -517,16 +509,21 @@ def export_challenger_model_to_s3(best_result: dict) -> dict:
 
 
 def main() -> None:
-    if not get_settings.mlflow_tracking_uri:
+    settings = get_settings()
+
+    production_threshold = settings.fraud_alert_threshold
+    thresholds = build_thresholds(production_threshold)
+
+    if not settings.mlflow_tracking_uri:
         raise ValueError("MLFLOW_TRACKING_URI is missing in .env")
 
-    mlflow.set_tracking_uri(get_settings.mlflow_tracking_uri)
-    mlflow.set_experiment(get_settings.mlflow_experiment_name)
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    mlflow.set_experiment(settings.mlflow_experiment_name)
 
     print("Loading processed training dataset from S3...")
     df = read_parquet_from_s3(
-        bucket_name=get_settings.s3_bucket_name,
-        object_key=get_settings.s3_processed_data_key,
+        bucket_name=settings.s3_bucket_name,
+        object_key=settings.s3_processed_data_key,
     )
 
     print("Preparing features and target...")
@@ -560,6 +557,9 @@ def main() -> None:
             y_train=y_train,
             y_test=y_test,
             class_imbalance_ratio=class_imbalance_ratio,
+            settings=settings,
+            production_threshold=production_threshold,
+            thresholds=thresholds,
         )
 
         results.append(result)
@@ -571,25 +571,31 @@ def main() -> None:
     print("Run ID:", best_result["run_id"])
     print("Selection metric: average_precision")
     print("Selection score:", best_result["selection_score"])
-    print("Production threshold:", PRODUCTION_THRESHOLD)
+    print("Production threshold:", production_threshold)
     print("Production metrics:", best_result["production_metrics"])
 
     print("\nExporting best model to S3 challenger path...")
-    challenger_s3_info = export_challenger_model_to_s3(best_result)
+    challenger_s3_info = export_challenger_model_to_s3(
+        best_result=best_result,
+        production_threshold=production_threshold,
+    )
 
     print(
         "Challenger model exported to: "
-        f"s3://{get_settings.s3_bucket_name}/"
+        f"s3://{settings.s3_bucket_name}/"
         f"{challenger_s3_info['s3_challenger_model_key']}"
     )
 
     print(
         "Challenger metadata exported to: "
-        f"s3://{get_settings.s3_bucket_name}/"
+        f"s3://{settings.s3_bucket_name}/"
         f"{challenger_s3_info['s3_challenger_model_metadata_key']}"
     )
 
-    registry_info = register_best_model_as_challenger(best_result)
+    registry_info = register_best_model_as_challenger(
+        best_result=best_result,
+        settings=settings,
+    )
 
     print("\n=== MODEL REGISTRY ===")
     print("Registered model name:", registry_info["registered_model_name"])

@@ -52,6 +52,7 @@ def compute_metrics(y_true, y_pred, y_proba) -> dict:
         "average_precision": average_precision_score(y_true, y_proba),
     }
 
+
 def evaluate_thresholds(y_true, y_proba, thresholds: list[float]) -> list[dict]:
     results = []
 
@@ -77,8 +78,10 @@ def evaluate_thresholds(y_true, y_proba, thresholds: list[float]) -> list[dict]:
 
 
 def main() -> None:
+    settings = get_settings()
+
     print("Loading training dataset from S3...")
-    df = read_csv_from_s3(get_settings.s3_raw_data_key)
+    df = read_csv_from_s3(settings.s3_raw_data_key)
 
     print("Preparing features and target...")
     X, y = prepare_features_and_target(df)
@@ -98,11 +101,11 @@ def main() -> None:
 
     model_pipeline = build_model_pipeline()
 
-    if not get_settings.mlflow_tracking_uri:
+    if not settings.mlflow_tracking_uri:
         raise ValueError("MLFLOW_TRACKING_URI is missing in .env")
 
-    mlflow.set_tracking_uri(get_settings.mlflow_tracking_uri)
-    mlflow.set_experiment(get_settings.mlflow_experiment_name)
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    mlflow.set_experiment(settings.mlflow_experiment_name)
 
     print("Training model...")
 
@@ -112,14 +115,14 @@ def main() -> None:
         mlflow.log_param("model_type", "LogisticRegression")
         mlflow.log_param("class_weight", "balanced")
         mlflow.log_param("solver", "saga")
-        mlflow.log_param("max_iter", 1000)
+        mlflow.log_param("max_iter", 3000)
         mlflow.log_param("test_size", 0.20)
         mlflow.log_param("random_state", 42)
         mlflow.log_param("n_rows", len(df))
         mlflow.log_param("n_features_before_encoding", X.shape[1])
         mlflow.log_param("target_column", "is_fraud")
-        mlflow.log_param("s3_raw_data_key", get_settings.s3_raw_data_key)
-        mlflow.log_param("production_threshold", get_settings.fraud_alert_threshold)
+        mlflow.log_param("s3_raw_data_key", settings.s3_raw_data_key)
+        mlflow.log_param("production_threshold", settings.fraud_alert_threshold)
 
         model_pipeline.fit(X_train, y_train)
 
@@ -128,28 +131,42 @@ def main() -> None:
         y_proba = model_pipeline.predict_proba(X_test)[:, 1]
 
         metrics = compute_metrics(y_test, y_pred, y_proba)
-        thresholds = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95]
+        thresholds = sorted(
+            set(
+                [
+                    0.50,
+                    0.60,
+                    0.70,
+                    0.80,
+                    0.90,
+                    0.95,
+                    settings.fraud_alert_threshold,
+                ]
+            )
+        )
         threshold_results = evaluate_thresholds(y_test, y_proba, thresholds)
 
         for row in threshold_results:
+            threshold_label = str(row["threshold"]).replace(".", "_")
+
             mlflow.log_metric(
-                f"precision_threshold_{row['threshold']}",
+                f"precision_threshold_{threshold_label}",
                 row["precision"],
             )
             mlflow.log_metric(
-                f"recall_threshold_{row['threshold']}",
+                f"recall_threshold_{threshold_label}",
                 row["recall"],
             )
             mlflow.log_metric(
-                f"f1_threshold_{row['threshold']}",
+                f"f1_threshold_{threshold_label}",
                 row["f1_score"],
             )
             mlflow.log_metric(
-                f"false_positives_threshold_{row['threshold']}",
+                f"false_positives_threshold_{threshold_label}",
                 row["false_positives"],
             )
             mlflow.log_metric(
-                f"false_negatives_threshold_{row['threshold']}",
+                f"false_negatives_threshold_{threshold_label}",
                 row["false_negatives"],
             )
 
@@ -166,17 +183,17 @@ def main() -> None:
         cm = confusion_matrix(y_test, y_pred)
 
         metadata = {
-            "model_name": get_settings.mlflow_model_name,
+            "model_name": settings.mlflow_model_name,
             "model_type": "LogisticRegression",
             "run_id": run_id,
             "trained_at_utc": datetime.now(timezone.utc).isoformat(),
-            "s3_raw_data_key": get_settings.s3_raw_data_key,
-            "s3_production_model_key": get_settings.s3_production_model_key,
+            "s3_raw_data_key": settings.s3_raw_data_key,
+            "s3_production_model_key": settings.s3_production_model_key,
             "metrics": metrics,
             "confusion_matrix": cm.tolist(),
             "classification_report": report,
             "threshold_analysis": threshold_results,
-            "production_threshold": get_settings.fraud_alert_threshold,
+            "production_threshold": settings.fraud_alert_threshold,
             "threshold_source": "env:FRAUD_ALERT_THRESHOLD",
         }
 
@@ -212,18 +229,18 @@ def main() -> None:
             mlflow.sklearn.log_model(
                 sk_model=model_pipeline,
                 artifact_path="model",
-                registered_model_name=get_settings.mlflow_model_name,
+                registered_model_name=settings.mlflow_model_name,
             )
 
             print("Uploading production model to S3...")
             upload_file_to_s3(
                 local_path=model_path,
-                s3_key=get_settings.s3_production_model_key,
+                s3_key=settings.s3_production_model_key,
             )
 
             upload_file_to_s3(
                 local_path=metadata_path,
-                s3_key=get_settings.s3_production_model_metadata_key,
+                s3_key=settings.s3_production_model_metadata_key,
             )
 
         print("\n=== METRICS ===")
@@ -235,9 +252,9 @@ def main() -> None:
 
         print("\nMLflow run_id:", run_id)
         print("Training completed successfully.")
-        
+
         print("\n=== THRESHOLD ANALYSIS ===")
-        
+
         for row in threshold_results:
             print(
                 f"threshold={row['threshold']:.2f} | "

@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 
 from dotenv import load_dotenv
 
@@ -108,6 +109,7 @@ class Settings:
     airflow_training_schedule: str | None
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings(
         # ============================================================
