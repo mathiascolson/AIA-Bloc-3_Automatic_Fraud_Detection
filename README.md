@@ -865,3 +865,33 @@ Cette évolution devrait rester encadrée par la logique `champion` / `challenge
 Airflow est exécuté localement avec Docker Compose pour la démonstration.
 
 Une évolution de production consisterait à déployer l’orchestration sur une infrastructure plus robuste, avec gestion centralisée des secrets, supervision des exécutions, logs centralisés, sauvegardes, alerting technique et séparation claire des environnements de développement, test et production.
+
+#### Dashboard de suivi Streamlit
+
+Une évolution possible serait d’ajouter un dashboard Streamlit connecté à NeonDB afin de visualiser les résultats du pipeline d’inférence et de faciliter le suivi opérationnel de la fraude.
+
+Ce dashboard pourrait présenter plusieurs indicateurs métier :
+
+- volume de transactions analysées sur une période donnée ;
+- nombre et taux de fraudes prédites ;
+- évolution du taux de fraude dans le temps ;
+- montants associés aux transactions frauduleuses détectées ;
+- estimation des montants de fraude évités ;
+- répartition des fraudes par catégorie de transaction ;
+- marchands ou catégories les plus exposés ;
+- régions ou États des consommateurs les plus concernés ;
+- régions ou États des marchands les plus concernés ;
+- évolution des alertes Discord envoyées ;
+- suivi du statut des alertes : créées, envoyées, échouées.
+
+Le dashboard pourrait également intégrer une vue MLOps :
+
+- modèle actuellement utilisé en production ;
+- alias MLflow actif ;
+- seuil de décision configuré ;
+- distribution des scores de fraude ;
+- volume de transactions labellisées disponibles pour le réentraînement ;
+- historique des décisions `champion` / `challenger` ;
+- visualisation des principaux indicateurs de drift lorsque le monitoring sera ajouté.
+
+Cette interface permettrait de compléter l’alerting Discord, qui reste centré sur les alertes unitaires, par une vision agrégée de l’activité fraude et de la stabilité du système.
