@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
@@ -22,6 +24,48 @@ def _replace_nan_with_none(df: pd.DataFrame) -> pd.DataFrame:
     """
 
     return df.where(pd.notnull(df), None)
+
+
+def _haversine_distance_km(
+    lat1: float,
+    lon1: float,
+    lat2: float,
+    lon2: float,
+) -> float | None:
+    """
+    Calcule la distance en kilomètres entre deux points GPS.
+
+    Retourne None si une coordonnée est manquante ou invalide.
+    """
+
+    values = [lat1, lon1, lat2, lon2]
+
+    if any(pd.isna(value) for value in values):
+        return None
+
+    try:
+        lat1_rad = math.radians(float(lat1))
+        lon1_rad = math.radians(float(lon1))
+        lat2_rad = math.radians(float(lat2))
+        lon2_rad = math.radians(float(lon2))
+    except (TypeError, ValueError):
+        return None
+
+    delta_lat = lat2_rad - lat1_rad
+    delta_lon = lon2_rad - lon1_rad
+
+    a = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat1_rad)
+        * math.cos(lat2_rad)
+        * math.sin(delta_lon / 2) ** 2
+    )
+
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    earth_radius_km = 6371.0
+
+    return round(earth_radius_km * c, 2)
 
 
 def create_predictions_table_if_not_exists(conn) -> None:
@@ -115,6 +159,7 @@ def insert_predictions_batch(conn, df: pd.DataFrame) -> None:
 
     print(f"[DB] Prédictions insérées dans NeonDB : {len(records)}")
 
+
 def create_fraud_alerts_table_if_not_exists(conn) -> None:
     """
     Crée la table d'alertes fraude si elle n'existe pas.
@@ -127,11 +172,17 @@ def create_fraud_alerts_table_if_not_exists(conn) -> None:
     CREATE TABLE IF NOT EXISTS fraud_alerts (
         id SERIAL PRIMARY KEY,
         trans_num TEXT UNIQUE NOT NULL,
+        cc_num BIGINT,
         amt DOUBLE PRECISION,
         merchant TEXT,
         category TEXT,
         city TEXT,
         state TEXT,
+        lat DOUBLE PRECISION,
+        long DOUBLE PRECISION,
+        merch_lat DOUBLE PRECISION,
+        merch_long DOUBLE PRECISION,
+        customer_merchant_distance_km DOUBLE PRECISION,
         transaction_time TIMESTAMP,
         fraud_probability DOUBLE PRECISION NOT NULL,
         fraud_alert_threshold DOUBLE PRECISION NOT NULL,
@@ -194,19 +245,46 @@ def insert_fraud_alerts_batch(
         print("[DB] Aucune fraude prédite, aucune alerte créée.")
         return fraud_alerts
 
-    optional_columns = ["merchant", "city", "state"]
+    optional_columns = [
+        "cc_num",
+        "merchant",
+        "city",
+        "state",
+        "lat",
+        "long",
+        "merch_lat",
+        "merch_long",
+        "customer_merchant_distance_km",
+    ]
 
     for column in optional_columns:
         if column not in fraud_alerts.columns:
             fraud_alerts[column] = None
 
+    if fraud_alerts["customer_merchant_distance_km"].isna().all():
+        fraud_alerts["customer_merchant_distance_km"] = fraud_alerts.apply(
+            lambda row: _haversine_distance_km(
+                row.get("lat"),
+                row.get("long"),
+                row.get("merch_lat"),
+                row.get("merch_long"),
+            ),
+            axis=1,
+        )
+
     cols = [
         "trans_num",
+        "cc_num",
         "amt",
         "merchant",
         "category",
         "city",
         "state",
+        "lat",
+        "long",
+        "merch_lat",
+        "merch_long",
+        "customer_merchant_distance_km",
         "current_time",
         "fraud_probability",
         "fraud_alert_threshold",
@@ -229,11 +307,17 @@ def insert_fraud_alerts_batch(
     records = data[
         [
             "trans_num",
+            "cc_num",
             "amt",
             "merchant",
             "category",
             "city",
             "state",
+            "lat",
+            "long",
+            "merch_lat",
+            "merch_long",
+            "customer_merchant_distance_km",
             "current_time",
             "fraud_probability",
             "fraud_alert_threshold",
@@ -247,11 +331,17 @@ def insert_fraud_alerts_batch(
     query = """
     INSERT INTO fraud_alerts (
         trans_num,
+        cc_num,
         amt,
         merchant,
         category,
         city,
         state,
+        lat,
+        long,
+        merch_lat,
+        merch_long,
+        customer_merchant_distance_km,
         transaction_time,
         fraud_probability,
         fraud_alert_threshold,
@@ -264,11 +354,17 @@ def insert_fraud_alerts_batch(
     ON CONFLICT (trans_num) DO NOTHING
     RETURNING
         trans_num,
+        cc_num,
         amt,
         merchant,
         category,
         city,
         state,
+        lat,
+        long,
+        merch_lat,
+        merch_long,
+        customer_merchant_distance_km,
         transaction_time,
         fraud_probability,
         fraud_alert_threshold,
@@ -293,11 +389,17 @@ def insert_fraud_alerts_batch(
         inserted_rows,
         columns=[
             "trans_num",
+            "cc_num",
             "amt",
             "merchant",
             "category",
             "city",
             "state",
+            "lat",
+            "long",
+            "merch_lat",
+            "merch_long",
+            "customer_merchant_distance_km",
             "transaction_time",
             "fraud_probability",
             "fraud_alert_threshold",
