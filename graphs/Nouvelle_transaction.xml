@@ -1,55 +1,79 @@
 <mxfile host="app.diagrams.net">
   <diagram name="Slide 2 - Parcours transaction" id="slide2-parcours-transaction">
-    <mxGraphModel dx="1414" dy="725" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#FFFFFF" math="0" shadow="0">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#FFFFFF" math="0" shadow="0">
       <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-        <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=15;fontColor=#4B5563;" value="Chaque transaction est récupérée, contrôlée, validée puis scorée par le modèle champion." vertex="1">
-          <mxGeometry height="30" width="730" x="220" y="230" as="geometry" />
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="airflow_band" value="DAG Airflow — fraud_inference_pipeline" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=1.5;fontColor=#334155;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="1">
+        <mxGeometry x="350" y="220" width="470" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="step1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=2;fontColor=#0F172A;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" value="Nouvelle transaction&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;API simulée&lt;/font&gt;" vertex="1">
-          <mxGeometry height="85" width="170" x="80" y="280" as="geometry" />
+
+        <!-- Sous-titre -->
+        <mxCell id="subtitle" value="Chaque transaction est récupérée, contrôlée, validée puis scorée par le modèle champion." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=15;fontColor=#4B5563;" vertex="1" parent="1">
+          <mxGeometry x="220" y="115" width="730" height="30" as="geometry"/>
         </mxCell>
-        <mxCell id="step2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EEF2FF;strokeColor=#4F46E5;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" value="Contrôles métier&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;schéma, dates, montants, coordonnées&lt;/font&gt;" vertex="1">
-          <mxGeometry height="85" width="170" x="290" y="280" as="geometry" />
+
+        <!-- Bloc 1 -->
+        <mxCell id="step1" value="Nouvelle transaction&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;API simulée&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=2;fontColor=#0F172A;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="80" y="280" width="170" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="step3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" value="Validation GE&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;Great Expectations&lt;/font&gt;" vertex="1">
-          <mxGeometry height="85" width="170" x="500" y="280" as="geometry" />
+
+        <!-- Bloc 2 -->
+        <mxCell id="step2" value="Contrôles métier&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;schéma, dates, montants, coordonnées&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EEF2FF;strokeColor=#4F46E5;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="290" y="280" width="170" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="step4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFF7ED;strokeColor=#EA580C;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" value="Modèle champion&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;chargé depuis MLflow&lt;/font&gt;" vertex="1">
-          <mxGeometry height="85" width="170" x="710" y="280" as="geometry" />
+
+        <!-- Bloc 3 -->
+        <mxCell id="step3" value="Validation GE&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;Great Expectations&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="500" y="280" width="170" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="step5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FEF2F2;strokeColor=#DC2626;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" value="Score fraude&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;décision selon le seuil&lt;/font&gt;" vertex="1">
-          <mxGeometry height="85" width="170" x="920" y="280" as="geometry" />
+
+        <!-- Bloc 4 -->
+        <mxCell id="step4" value="Modèle champion&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;chargé depuis MLflow&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFF7ED;strokeColor=#EA580C;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="710" y="280" width="170" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="arrow1" edge="1" parent="1" source="step1" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" target="step2" value="">
-          <mxGeometry height="50" relative="1" width="50" as="geometry">
-            <mxPoint x="250" y="320" as="sourcePoint" />
-            <mxPoint x="290" y="320" as="targetPoint" />
+
+        <!-- Bloc 5 -->
+        <mxCell id="step5" value="Score fraude&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;décision selon le seuil&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FEF2F2;strokeColor=#DC2626;strokeWidth=2;fontColor=#111827;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="920" y="280" width="170" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- Flèches -->
+        <mxCell id="arrow1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" edge="1" parent="1" source="step1" target="step2">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="250" y="320" as="sourcePoint"/>
+            <mxPoint x="290" y="320" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
-        <mxCell id="arrow2" edge="1" parent="1" source="step2" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" target="step3" value="">
-          <mxGeometry height="50" relative="1" width="50" as="geometry">
-            <mxPoint x="460" y="320" as="sourcePoint" />
-            <mxPoint x="500" y="320" as="targetPoint" />
+
+        <mxCell id="arrow2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" edge="1" parent="1" source="step2" target="step3">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="460" y="320" as="sourcePoint"/>
+            <mxPoint x="500" y="320" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
-        <mxCell id="arrow3" edge="1" parent="1" source="step3" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" target="step4" value="">
-          <mxGeometry height="50" relative="1" width="50" as="geometry">
-            <mxPoint x="670" y="320" as="sourcePoint" />
-            <mxPoint x="710" y="320" as="targetPoint" />
+
+        <mxCell id="arrow3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" edge="1" parent="1" source="step3" target="step4">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="670" y="320" as="sourcePoint"/>
+            <mxPoint x="710" y="320" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
-        <mxCell id="arrow4" edge="1" parent="1" source="step4" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" target="step5" value="">
-          <mxGeometry height="50" relative="1" width="50" as="geometry">
-            <mxPoint x="880" y="320" as="sourcePoint" />
-            <mxPoint x="920" y="320" as="targetPoint" />
+
+        <mxCell id="arrow4" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#2563EB;strokeWidth=3;" edge="1" parent="1" source="step4" target="step5">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="880" y="320" as="sourcePoint"/>
+            <mxPoint x="920" y="320" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
-        <mxCell id="note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F9FAFB;strokeColor=#D1D5DB;strokeWidth=1;fontColor=#374151;fontSize=13;align=center;verticalAlign=middle;spacing=8;" value="Dans le projet, l’API simule l’arrivée d’une transaction. En production, ce flux correspondrait à une nouvelle vente ou à un nouveau paiement." vertex="1">
-          <mxGeometry height="55" width="700" x="235" y="386" as="geometry" />
+
+        <!-- Note discrète -->
+        <mxCell id="note" value="Dans le projet, l’API simule l’arrivée d’une transaction. En production, ce flux correspondrait à une nouvelle vente ou à un nouveau paiement." style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F9FAFB;strokeColor=#D1D5DB;strokeWidth=1;fontColor=#374151;fontSize=13;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="235" y="440" width="700" height="55" as="geometry"/>
         </mxCell>
+
       </root>
     </mxGraphModel>
   </diagram>
-</mxfile>
+</mxfile>   
