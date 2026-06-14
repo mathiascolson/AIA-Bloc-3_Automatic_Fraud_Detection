@@ -6,7 +6,7 @@ def is_candidate_better(
     challenger_metrics: dict,
     min_average_precision_gain: float = 0.01,
     max_recall_drop: float = 0.02,
-    min_precision_fraud: float = 0.10,
+    min_precision_gain: float = 0.01,
 ) -> tuple[bool, str]:
     """
     Détermine si le challenger doit être promu champion.
@@ -14,12 +14,13 @@ def is_candidate_better(
     Règle :
     - le challenger doit améliorer average_precision d'au moins min_average_precision_gain ;
     - le recall au seuil de production ne doit pas trop baisser ;
-    - la precision au seuil de production doit rester acceptable.
+    - la precision au seuil de production doit s'améliorer d'au moins min_precision_gain.
     """
 
     required_champion_metrics = [
         "average_precision",
         "production_recall",
+        "production_precision",
     ]
 
     required_challenger_metrics = [
@@ -56,6 +57,7 @@ def is_candidate_better(
     champion_recall = champion_metrics["production_recall"]
     challenger_recall = challenger_metrics["production_recall"]
 
+    champion_precision = champion_metrics["production_precision"]
     challenger_precision = challenger_metrics["production_precision"]
 
     improves_average_precision = (
@@ -66,8 +68,8 @@ def is_candidate_better(
         challenger_recall >= champion_recall - max_recall_drop
     )
 
-    precision_is_acceptable = (
-        challenger_precision >= min_precision_fraud
+    improves_precision = (
+        challenger_precision >= champion_precision + min_precision_gain
     )
 
     if not improves_average_precision:
@@ -88,12 +90,12 @@ def is_candidate_better(
             ),
         )
 
-    if not precision_is_acceptable:
+    if not improves_precision:
         return (
             False,
             (
-                "Challenger non promu : precision fraude inférieure au "
-                "seuil minimal."
+                "Challenger non promu : amélioration insuffisante de la "
+                "precision fraude au seuil de production."
             ),
         )
 
@@ -125,6 +127,7 @@ def build_cd_decision(
         "challenger_average_precision": challenger_metrics["average_precision"],
         "champion_recall_fraud": champion_metrics["production_recall"],
         "challenger_recall_fraud": challenger_metrics["production_recall"],
+        "champion_precision_fraud": champion_metrics["production_precision"],
         "challenger_precision_fraud": challenger_metrics["production_precision"],
         "promoted": promoted,
         "decision_reason": decision_reason,

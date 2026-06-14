@@ -895,3 +895,7 @@ Le dashboard pourrait également intégrer une vue MLOps :
 - visualisation des principaux indicateurs de drift lorsque le monitoring sera ajouté.
 
 Cette interface permettrait de compléter l’alerting Discord, qui reste centré sur les alertes unitaires, par une vision agrégée de l’activité fraude et de la stabilité du système.
+
+#### Sécurité et conformité RGPD
+
+Une évolution importante du projet serait de renforcer la sécurité et la gouvernance des données transactionnelles. Cela passerait par le chiffrement des données au repos et en transit, la pseudonymisation des identifiants clients, une gestion plus fine des accès, ainsi qu’une politique claire de conservation et de suppression des données. À plus long terme, le système pourrait intégrer des mécanismes permettant aux clients d’exercer leurs droits RGPD, notamment l’accès, la rectification ou la demande d’effacement de leurs données personnelles.

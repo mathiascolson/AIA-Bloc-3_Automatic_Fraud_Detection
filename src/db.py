@@ -475,6 +475,7 @@ def create_model_cd_decisions_table_if_not_exists(conn) -> None:
         challenger_average_precision DOUBLE PRECISION,
         champion_recall_fraud DOUBLE PRECISION,
         challenger_recall_fraud DOUBLE PRECISION,
+        champion_precision_fraud DOUBLE PRECISION,
         challenger_precision_fraud DOUBLE PRECISION,
         promoted BOOLEAN,
         decision_reason TEXT,
@@ -501,6 +502,7 @@ def insert_model_cd_decision(conn, decision: dict) -> None:
         "challenger_average_precision",
         "champion_recall_fraud",
         "challenger_recall_fraud",
+        "champion_precision_fraud",
         "challenger_precision_fraud",
         "promoted",
         "decision_reason",
@@ -526,6 +528,7 @@ def insert_model_cd_decision(conn, decision: dict) -> None:
         challenger_average_precision,
         champion_recall_fraud,
         challenger_recall_fraud,
+        champion_precision_fraud,
         challenger_precision_fraud,
         promoted,
         decision_reason
@@ -538,6 +541,7 @@ def insert_model_cd_decision(conn, decision: dict) -> None:
         %(challenger_average_precision)s,
         %(champion_recall_fraud)s,
         %(challenger_recall_fraud)s,
+        %(champion_precision_fraud)s,
         %(challenger_precision_fraud)s,
         %(promoted)s,
         %(decision_reason)s

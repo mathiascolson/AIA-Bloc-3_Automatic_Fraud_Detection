@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS model_cd_decisions (
     challenger_average_precision DOUBLE PRECISION,
     champion_recall_fraud DOUBLE PRECISION,
     challenger_recall_fraud DOUBLE PRECISION,
+    champion_precision_fraud DOUBLE PRECISION,
     challenger_precision_fraud DOUBLE PRECISION,
     promoted BOOLEAN,
     decision_reason TEXT,
