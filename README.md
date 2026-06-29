@@ -39,7 +39,7 @@ Les réentraînements ultérieurs suivent la même logique : un nouveau modèle 
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ 1. Amorçage initial                                           │
+│ 1. Amorçage initial                                          │
 └──────────────────────────────────────────────────────────────┘
 
 Dataset historique supervisé
@@ -55,7 +55,7 @@ Alias champion
 
 
 ┌──────────────────────────────────────────────────────────────┐
-│ 2. Inférence automatisée                                      │
+│ 2. Inférence automatisée                                     │
 └──────────────────────────────────────────────────────────────┘
 
 API de transactions
@@ -78,7 +78,7 @@ si fraude prédite
 
 
 ┌──────────────────────────────────────────────────────────────┐
-│ 3. Réentraînement et Continuous Delivery modèle               │
+│ 3. Réentraînement et Continuous Delivery modèle              │
 └──────────────────────────────────────────────────────────────┘
 
 Transactions labellisées non intégrées
@@ -518,7 +518,7 @@ notified_at IS NOT NULL
 
 **Exemple d'une alerte Discord :**
 
-![Exemple d’alerte Discord](docs/Discord_alert.png)
+![Exemple d’alerte Discord](graphs/Discord_alert.png)
 
 ---
 
@@ -735,7 +735,6 @@ MIN_NEW_TRANSACTIONS_FOR_RETRAINING=100
 Le projet limite les doublons sur plusieurs étapes :
 
 * les alertes sont créées uniquement pour les fraudes prédites ;
-* les transactions labellisées utilisent ON CONFLICT (trans_num) DO NOTHING ;
 * les transactions déjà présentes dans le dataset d’entraînement ne sont pas ajoutées une seconde fois ;
 * les alertes Discord ne sont envoyées que pour les nouvelles alertes créées ;
 * les transactions intégrées au dataset sont ensuite marquées comme intégrées.
